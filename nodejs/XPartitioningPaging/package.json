@@ -12,23 +12,14 @@
   "license": "ISC",
   "dependencies": {
     "@azure/cosmos": "^3.6.3",
-    "@types/debug": "^4.1.4",
-    "debug": "^4.1.1",
     "dotenv": "^8.2.0",
     "guid-typescript": "^1.0.9",
-    "https-proxy-agent": "^2.2.4"
+    "https-proxy-agent": "^2.2.4",
+    "ts-node": "^8.10.1",
+    "typescript": "^3.8.3"
   },
   "devDependencies": {
     "@types/async": "^3.2.1",
-    "@types/express": "^4.17.6",
-    "@types/express-openapi": "^0.11.33",
-    "@types/filesystem": "0.0.29",
-    "@types/js-yaml": "^3.12.3",
-    "async": "^3.2.0",
-    "express": "^4.17.1",
-    "fs": "0.0.1-security",
-    "js-yaml": "^3.13.1",
-    "ts-node-dev": "^1.0.0-pre.44",
-    "typescript": "^3.8.3"
+    "@types/node": "^13.13.5"
   }
 }

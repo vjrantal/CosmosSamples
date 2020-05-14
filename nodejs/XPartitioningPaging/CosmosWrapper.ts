@@ -21,12 +21,18 @@ export class CosmosWrapper
         
         dotenv.config();
         
-        // let agent = new proxy({ rejectUnauthorized: false, host:'localhost', port: 8888});
+        var enableProxy = (process.env.EnableProxy as string)?.toLowerCase() == 'true';
+        var agentProxy: proxy | undefined;
+
+        if(enableProxy)
+        {
+            agentProxy = new proxy({ rejectUnauthorized: false, host:'localhost', port: 8888});
+        }
 
         let options: CosmosClientOptions = {
             endpoint: process.env.Endpoint as string,
             key: process.env.Key as string,
-            //agent: agent
+            agent: agentProxy
         };
 
         this.client = new CosmosClient(options);
@@ -70,16 +76,17 @@ export class CosmosWrapper
         let response: FeedResponse<IItem>;
         const limit = 100;
         
+        let hasMore = false;
         do {
-            const queryString = `SELECT * FROM c ${orderByClause || ''} OFFSET ${stats.totalFetched} LIMIT ${limit+1}`;
-            const query = this.container.items.query(queryString, { maxItemCount: limit });
+            const queryString = `SELECT * FROM c ${orderByClause || ''} OFFSET ${stats.totalFetched} LIMIT ${limit}`;
+            const query = this.container.items.query(queryString, { maxItemCount: limit, bufferItems: true, useIncrementalFeed: true });
             
             stats.StartOperation();
             response = await query.fetchNext() as FeedResponse<IItem>;
             if (!response.resources) break;
             stats.StopOperation(response);
-
-        } while(response.hasMoreResults);
+            hasMore = response.resources.length == limit;
+        } while(hasMore);
 
         stats.PrintStats();
     }
