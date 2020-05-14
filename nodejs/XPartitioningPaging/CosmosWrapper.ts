@@ -5,6 +5,7 @@ import proxy from 'https-proxy-agent';
 
 import { CosmosClient, CosmosClientOptions, Container, FeedResponse } from '@azure/cosmos';
 import { Stopwatch } from './Stopwatch';
+import { Stats } from './Stats';
 
 export class CosmosWrapper
 {
@@ -20,12 +21,12 @@ export class CosmosWrapper
         
         dotenv.config();
         
-        let agent = new proxy({ rejectUnauthorized: false, host:'localhost', port: 8888});
+        // let agent = new proxy({ rejectUnauthorized: false, host:'localhost', port: 8888});
 
         let options: CosmosClientOptions = {
             endpoint: process.env.Endpoint as string,
             key: process.env.Key as string,
-            agent: agent
+            //agent: agent
         };
 
         this.client = new CosmosClient(options);
@@ -59,80 +60,56 @@ export class CosmosWrapper
         }
     }
 
-    public async queryXPartition(useOffsetLimit: boolean, orderByClause?: string)
+    public async queryXPartition(orderByClause?: string)
     {
         await this.Setup();
-
         if(!this.container) return;
 
-        let token = '';
+        const stats = new Stats();
+
         let response: FeedResponse<IItem>;
-        let totalFetched = 0;
-        let totalRus = 0;
-        let limit = 100;
-        let numberOfIterations = 0;
-        let samples: number[] = [];
-
-        const sw = new Stopwatch();
+        const limit = 100;
+        
         do {
-            sw.restart();
-            const queryString = "SELECT * FROM c" + (orderByClause || '') + (useOffsetLimit ? ` OFFSET ${totalFetched} LIMIT ${limit+1}` : '');
-
-            let query = this.container.items.query(queryString, { maxItemCount: limit, continuationToken: useOffsetLimit ? undefined : token});
-            response = await query.fetchNext() as FeedResponse<IItem>;
+            const queryString = `SELECT * FROM c ${orderByClause || ''} OFFSET ${stats.totalFetched} LIMIT ${limit+1}`;
+            const query = this.container.items.query(queryString, { maxItemCount: limit });
             
+            stats.StartOperation();
+            response = await query.fetchNext() as FeedResponse<IItem>;
             if (!response.resources) break;
+            stats.StopOperation(response);
 
-            totalFetched += response.resources.length;
-            totalRus += Number(response.requestCharge);
+        } while(response.hasMoreResults);
 
-            token = response.continuationToken;
-            numberOfIterations++;
-            samples.push(Math.floor(sw.totalMilliseconds()));
-        } while(token || (useOffsetLimit && response.hasMoreResults));
-
-
-        this.printStats(samples, totalFetched, numberOfIterations, totalRus);
+        stats.PrintStats();
     }
 
     public async queryXPartitionInMemory(orderByClause?: string)
     {
         await this.Setup();
-
         if(!this.container) return;
 
         let response: FeedResponse<IItem>;
-        let totalFetched = 0;
-        let totalRus = 0;
         let limit = 100;
-        let numberOfIterations = 0;
-        let samples: number[] = [];
-
-        const sw = new Stopwatch();
-        sw.restart();
+        const stats = new Stats();
+        
         const queryString = "SELECT * FROM c" + (orderByClause || '');
 
         let query = this.container.items.query(queryString, { maxItemCount: limit });
         while(query.hasMoreResults())
         {
+            stats.StartOperation();
             response = await query.fetchNext() as FeedResponse<IItem>;
-            
             if (!response.resources) break;
+            stats.StopOperation(response);
 
-            totalFetched += response.resources.length;
-            totalRus += Number(response.requestCharge);
-
-            numberOfIterations++;
-            samples.push(Math.floor(sw.totalMilliseconds()));
+            if (response.continuationToken)
+            {
+                // if we get a continuation token, we throw, this is not expected in this test
+                throw 'we got a continuation token';
+            }
         }
-        
-        this.printStats(samples, totalFetched, numberOfIterations, totalRus);
-    }
 
-    private printStats(samples: number[], totalFetched: number, numberOfIterations: number, totalRus: number) {
-        console.log('samples: ' + samples.join('\t'));
-        let totalMs = 0;
-        samples.forEach(x => totalMs += x);
-        console.log(`fetched ${totalFetched} in ${totalMs}ms, requests: ${numberOfIterations}, RUs: ${totalRus}`);
+        stats.PrintStats();
     }
 }
