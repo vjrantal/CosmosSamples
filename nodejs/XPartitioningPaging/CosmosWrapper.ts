@@ -1,7 +1,7 @@
-import dotenv from 'dotenv';
+import * as dotenv from 'dotenv';
 import { Guid } from "guid-typescript";
 import { IItem } from "./Item";
-import proxy from 'https-proxy-agent';
+import * as proxy from 'https-proxy-agent';
 
 import { CosmosClient, CosmosClientOptions, Container, FeedResponse } from '@azure/cosmos';
 import { Stopwatch } from './Stopwatch';
@@ -91,6 +91,33 @@ export class CosmosWrapper
         stats.PrintStats();
     }
 
+    public async queryXPartitionRegular(orderByClause?: string)
+    {
+        await this.Setup();
+        if(!this.container) return;
+
+        const stats = new Stats();
+
+        let response: FeedResponse<IItem>;
+        const limit = 100;
+        let token: string = undefined;
+        
+        let hasMore = false;
+        do {
+            const queryString = `SELECT * FROM c ${orderByClause || ''}`;
+            const query = this.container.items.query(queryString, { continuationToken: token, maxItemCount: limit, bufferItems: true, useIncrementalFeed: true });
+            
+            stats.StartOperation();
+            response = await query.fetchNext() as FeedResponse<IItem>;
+            if (!response.resources) break;
+            stats.StopOperation(response);
+            token = response.continuationToken;
+            hasMore = response.resources.length == limit;
+        } while(hasMore);
+
+        stats.PrintStats();
+    }
+
     public async queryXPartitionInMemory(orderByClause?: string)
     {
         await this.Setup();
@@ -109,12 +136,6 @@ export class CosmosWrapper
             response = await query.fetchNext() as FeedResponse<IItem>;
             if (!response.resources) break;
             stats.StopOperation(response);
-
-            if (response.continuationToken)
-            {
-                // if we get a continuation token, we throw, this is not expected in this test
-                throw 'we got a continuation token';
-            }
         }
 
         stats.PrintStats();
