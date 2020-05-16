@@ -78,7 +78,7 @@ export class CosmosWrapper
         
         let hasMore = false;
         do {
-            const queryString = `SELECT * FROM c ${orderByClause || ''} OFFSET ${stats.totalFetched} LIMIT ${limit}`;
+            const queryString = `SELECT * FROM c ${orderByClause || ''} OFFSET ${stats.totalFetched} LIMIT ${limit+1}`;
             const query = this.container.items.query(queryString, { maxItemCount: limit, bufferItems: true, useIncrementalFeed: true });
             
             stats.StartOperation();
