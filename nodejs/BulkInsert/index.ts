@@ -5,7 +5,7 @@ import { Stopwatch } from "./Stopwatch";
     const client = new CosmosWrapper(8000);
     await client.Setup();
     
-    let numberOfItems = 100;
+    let numberOfItems = 5000;
     const sw = new Stopwatch();
     sw.restart();
 
