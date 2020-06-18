@@ -1,13 +1,15 @@
-function spBulkInsertItems(items, useUpsert = false) {
+function spBulkInsertItemsV1(items, useUpsert, ignoreInsertErrors) {
     const context = getContext();
     const collection = context.getCollection();
     const collectionLink = collection.getSelfLink();
-    const documentAction = useUpsert ? collection.upsertDocument : collection.createDocument;
+    const documentFn = useUpsert ? collection.upsertDocument : collection.createDocument;
     let count = 0;
     const upsertNext = () => {
-        const accepted = (count < items.length) && documentAction(collectionLink, items[count], (err) => {
+        const accepted = (count < items.length) && documentFn(collectionLink, items[count], (err) => {
             if (err) {
-                throw err;
+                if (err.number !== 409 || !ignoreInsertErrors) {
+                    throw err;
+                }
             }
             ++count;
             upsertNext();

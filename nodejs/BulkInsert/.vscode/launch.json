@@ -8,8 +8,13 @@
 			"name": "Node Inspector",
 			"type": "node",
 			"request": "launch",
-			"args": ["${workspaceRoot}/index.ts"],
-			"runtimeArgs": ["-r", "ts-node/register"],
+			"args": [
+				"${workspaceRoot}/index.ts"
+			],
+			"runtimeArgs": [
+				"-r",
+				"ts-node/register"
+			],
 			"cwd": "${workspaceRoot}",
 			"protocol": "inspector",
 			"internalConsoleOptions": "openOnSessionStart",

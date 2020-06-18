@@ -4,10 +4,10 @@ You can optimize your bulk inserts when using the Javascript SDK. The most effic
 
 |Scenario|Number of Items|RUs used|Time in ms|
 |-|-:|-:|-:|
-|Parallel 40 max|5000|66'650|13'954|
-|Parallel 50 max|5000|66'650|14'998|
-|SP insert|5000|65'359|9'861|
-|SP upsert|5000|65'336|13'324|
+|Parallel 40 max|5000|66'650|15'292|
+|SP insert|5000|65'359|8'834|
+|SP upsert|5000|65'336|13'359|
+|SP insert 100% conflict|5000|4'662|11'730|
 
 ## Conclusion
 

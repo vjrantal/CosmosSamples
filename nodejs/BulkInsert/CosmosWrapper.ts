@@ -1,9 +1,9 @@
 import * as dotenv from 'dotenv';
 import { Guid } from "guid-typescript";
 import * as fs from 'fs';
+import proxy from 'https-proxy-agent';
 
 import { CosmosClient, CosmosClientOptions, Container, FeedResponse, StoredProcedure, ItemDefinition, ItemResponse } from '@azure/cosmos';
-import { Stopwatch } from './Stopwatch';
 import { promisify, callbackify } from 'util';
 import async from 'async';
 
@@ -20,10 +20,26 @@ export class CosmosWrapper
     constructor(private readonly rus: number) {
         
         dotenv.config();
-        
+
+        var enableProxy = (process.env.EnableProxy as string)?.toLowerCase() == 'true';
+        var agentProxy: proxy | undefined;
+
+        if(enableProxy)
+        {
+            agentProxy = new proxy({ rejectUnauthorized: false, host:'localhost', port: 8888});
+        }
+
         let options: CosmosClientOptions = {
             endpoint: process.env.Endpoint as string,
             key: process.env.Key as string,
+            agent: agentProxy, 
+            connectionPolicy: {
+                retryOptions: {
+                    fixedRetryIntervalInMilliseconds: 0,
+                    maxRetryAttemptCount: 120, 
+                    maxWaitTimeInSeconds: 840
+                }
+            }
         };
 
         this.client = new CosmosClient(options);
@@ -33,10 +49,22 @@ export class CosmosWrapper
     {
         if(this.container) return;
 
+        //await this.Cleanup();
+
         const { database } = await this.client.databases.createIfNotExists({ id: this.DbId});
         const containerResult = await database.containers.createIfNotExists({ throughput: this.rus, id: this.ContainerId, partitionKey: { paths: ['/pk'] } });
         this.container = containerResult.container;
         this.storedProcedure = await this.ensureStoredProc('./StoredProcs/spBulkInsert.js', 'spBulkInsertV1');
+    }
+
+    public async Cleanup(): Promise<void>
+    {
+        try {
+            await this.client.database(this.DbId).delete();
+        }
+        catch(e) {
+            // ignore
+        }
     }
 
     public async performInsertParallel(numberOfItems: number, parallelLimit = 10) : Promise<number>
@@ -51,19 +79,24 @@ export class CosmosWrapper
 
         await promisify(async.forEachLimit.bind(async, items, parallelLimit,
             (t: any, cb: any) => callbackify<ItemResponse<ItemDefinition>>(() => fn(t))((e, result) => {
-                totalRu += result.requestCharge;
-                cb();
+                if(e) {
+                  cb(e);
+                }
+                else {
+                    totalRu += result.requestCharge;
+                    cb();
+                }
             })))();
 
         return totalRu;
     }
 
-    public async performInsertUsingSp(numberOfItems: number, useUpsert = false) : Promise<number>
+    public async performInsertUsingSp(numberOfItems: number, useUpsert = false, ignoreInsertErrors = false, existingItems?:any[]) : Promise<number>
     {
         this.bulkInserted = 0;
         this.bulkInsertRus = 0;
-        const items = CosmosWrapper.createItems(numberOfItems);
-        await this.performInsertUsingSpCore(items, useUpsert);
+        const items = existingItems ?? CosmosWrapper.createItems(numberOfItems);
+        await this.performInsertUsingSpCore(items, useUpsert, ignoreInsertErrors);
 
         if(this.bulkInserted != numberOfItems)
         {
@@ -73,7 +106,7 @@ export class CosmosWrapper
         return this.bulkInsertRus;
     }
 
-    private async performInsertUsingSpCore(items: any[], useUpsert: boolean) : Promise<void>
+    private async performInsertUsingSpCore(items: any[], useUpsert: boolean, ignoreInsertErrors: boolean) : Promise<void>
     {
         if(!this.storedProcedure) {
             throw new Error('missing stored procedure');
@@ -81,14 +114,15 @@ export class CosmosWrapper
 
         try
         {
-            const result = await this.storedProcedure.execute('bulk', [items]);
+            const result = await this.storedProcedure.execute('bulk', [items, useUpsert, ignoreInsertErrors]);
             const processedItems = result.resource.processed;
             this.bulkInsertRus += result.requestCharge;
             this.bulkInserted += processedItems;
 
             if(processedItems < items.length)
             {
-                await this.performInsertUsingSpCore(items.slice(processedItems), useUpsert);
+                console.log(`inserted: ${processedItems}`);
+                await this.performInsertUsingSpCore(items.slice(processedItems), useUpsert, ignoreInsertErrors);
             }
         }
         catch(err)
@@ -98,7 +132,7 @@ export class CosmosWrapper
                 console.error('request too large');
                 // split until we have a small enough size
                 let mid = items.length >> 1;
-                await Promise.all([this.performInsertUsingSpCore(items.slice(0, mid), useUpsert), this.performInsertUsingSpCore(items.slice(mid), useUpsert)]);
+                await Promise.all([this.performInsertUsingSpCore(items.slice(0, mid), useUpsert, ignoreInsertErrors), this.performInsertUsingSpCore(items.slice(mid), useUpsert, ignoreInsertErrors)]);
             }
             else 
             {
@@ -107,7 +141,7 @@ export class CosmosWrapper
         }
     }
 
-    private static createItems(numberOfItems: number): any[]
+    public static createItems(numberOfItems: number): any[]
     {
         const numberOfAttributes = 10;
         const items = new Array(numberOfItems);
