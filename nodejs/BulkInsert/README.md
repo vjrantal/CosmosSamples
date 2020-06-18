@@ -2,6 +2,8 @@
 
 You can optimize your bulk inserts when using the Javascript SDK. The most efficient way to insert a large amount of items is a stored procedure that does bulk insert the items for you.
 
+The scenario was run with 8000 rus configured. The container running the sample was hosted in a Azure container instance in the same region as the cosmos instance with 2 CPUs. We were not CPU bound.
+
 |Scenario|Number of Items|RUs used|Time in ms|
 |-|-:|-:|-:|
 |Parallel 40 max|5000|66'650|15'292|
