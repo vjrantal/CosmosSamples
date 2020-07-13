@@ -7,6 +7,9 @@ import { CosmosClient, CosmosClientOptions, Container, FeedResponse, StoredProce
 import { promisify, callbackify } from 'util';
 import async from 'async';
 
+const COSMOSDB_RESPONSE_CODE_ERR_TOO_LARGE: number = 413;
+const COSMOSDB_RESPONSE_CODE_ERR_TIMEOUT: number = 408;    
+
 export class CosmosWrapper
 {
     private readonly client: CosmosClient;
@@ -79,9 +82,7 @@ export class CosmosWrapper
 
         await promisify(async.forEachLimit.bind(async, items, parallelLimit,
             (t: any, cb: any) => callbackify<ItemResponse<ItemDefinition>>(() => fn(t))((e, result) => {
-                if(e) {
-                  cb(e);
-                }
+                if(e) cb(e);
                 else {
                     totalRu += result.requestCharge;
                     cb();
@@ -91,12 +92,12 @@ export class CosmosWrapper
         return totalRu;
     }
 
-    public async performInsertUsingSp(numberOfItems: number, useUpsert = false, ignoreInsertErrors = false, existingItems?:any[]) : Promise<number>
+    public async performInsertUsingSp(numberOfItems: number, useUpsert = false, ignoreInsertErrors = false, existingItems?:any[], chunkSize=-1) : Promise<number>
     {
         this.bulkInserted = 0;
         this.bulkInsertRus = 0;
         const items = existingItems ?? CosmosWrapper.createItems(numberOfItems);
-        await this.performInsertUsingSpCore(items, useUpsert, ignoreInsertErrors);
+        await this.performInsertUsingSpCore(items, useUpsert, ignoreInsertErrors, chunkSize);
 
         if(this.bulkInserted != numberOfItems)
         {
@@ -106,7 +107,7 @@ export class CosmosWrapper
         return this.bulkInsertRus;
     }
 
-    private async performInsertUsingSpCore(items: any[], useUpsert: boolean, ignoreInsertErrors: boolean) : Promise<void>
+    private async performInsertUsingSpCore(items: any[], useUpsert: boolean, ignoreInsertErrors: boolean, chunkSize=-1) : Promise<void>
     {
         if(!this.storedProcedure) {
             throw new Error('missing stored procedure');
@@ -114,25 +115,41 @@ export class CosmosWrapper
 
         try
         {
-            const result = await this.storedProcedure.execute('bulk', [items, useUpsert, ignoreInsertErrors]);
-            const processedItems = result.resource.processed;
-            this.bulkInsertRus += result.requestCharge;
-            this.bulkInserted += processedItems;
-
-            if(processedItems < items.length)
+            if(chunkSize != -1 && items.length > chunkSize)
             {
-                console.log(`inserted: ${processedItems}`);
-                await this.performInsertUsingSpCore(items.slice(processedItems), useUpsert, ignoreInsertErrors);
+                const tasks = Array<Promise<any>>(Math.ceil(items.length / chunkSize));
+                let idx = 0;
+                for(var i=0;i<tasks.length;i++)
+                {
+                    const end = Math.min(items.length, idx + chunkSize);
+                    tasks[i] = this.performInsertUsingSpCore(items.slice(idx, end), useUpsert, ignoreInsertErrors, chunkSize);
+                    idx += chunkSize;
+                }
+                await Promise.all(tasks);
+            }
+            else
+            {
+                const result = await this.storedProcedure.execute('bulk', [items, useUpsert, ignoreInsertErrors]);
+                const processedItems = result.resource.processed;
+                this.bulkInsertRus += result.requestCharge;
+                this.bulkInserted += processedItems;
+                if(processedItems < items.length)
+                {
+                    console.log(`inserted: ${processedItems}, duration: ${result.resource.duration}`);
+                    await this.performInsertUsingSpCore(items.slice(processedItems), useUpsert, ignoreInsertErrors, chunkSize);
+                }
             }
         }
         catch(err)
         {
-            if(err.code === 413) // too large request
+            if(err.code === COSMOSDB_RESPONSE_CODE_ERR_TOO_LARGE 
+            || err.code === COSMOSDB_RESPONSE_CODE_ERR_TIMEOUT) // too large request
             {
                 console.error('request too large');
-                // split until we have a small enough size
                 let mid = items.length >> 1;
-                await Promise.all([this.performInsertUsingSpCore(items.slice(0, mid), useUpsert, ignoreInsertErrors), this.performInsertUsingSpCore(items.slice(mid), useUpsert, ignoreInsertErrors)]);
+                await Promise.all([
+                    this.performInsertUsingSpCore(items.slice(0, mid), useUpsert, ignoreInsertErrors, chunkSize), 
+                    this.performInsertUsingSpCore(items.slice(mid), useUpsert, ignoreInsertErrors, chunkSize)]);
             }
             else 
             {
@@ -187,11 +204,9 @@ export class CosmosWrapper
             
             return result.storedProcedure;
         }
-        catch(e)
-        {
+        catch(e) {
             if(e.code == 404) {
                 const result = await this.container.scripts.storedProcedures.create(storedProcDef);
-
                 console.log("stored proc created");
                 return result.storedProcedure;
             }

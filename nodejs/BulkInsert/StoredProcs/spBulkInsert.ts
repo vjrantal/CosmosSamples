@@ -1,5 +1,5 @@
-
 function spBulkInsertItemsV1(items: any[], useUpsert: boolean, ignoreInsertErrors: boolean) {
+    const start = new Date();
     const context = getContext();
     const collection = context.getCollection();
     const collectionLink = collection.getSelfLink();
@@ -8,7 +8,7 @@ function spBulkInsertItemsV1(items: any[], useUpsert: boolean, ignoreInsertError
     const upsertNext = (): void => {
       const accepted = (count < items.length) && documentFn(collectionLink, items[count], (err) => {
         if (err) {
-          if (err.number !== 409 || !ignoreInsertErrors) {
+          if (err.number !== COSMOS_ITEM_EXISTS || !ignoreInsertErrors) {
             throw err;
           }
         }
@@ -17,9 +17,11 @@ function spBulkInsertItemsV1(items: any[], useUpsert: boolean, ignoreInsertError
       });
   
       if (!accepted) {
-        context.getResponse().setBody({ processed: count });
+
+        context.getResponse().setBody({ processed: count, duration: (new Date().getTime()) - start.getTime() });
       }
     }
     upsertNext();
   }
   
+  const COSMOS_ITEM_EXISTS = 409;

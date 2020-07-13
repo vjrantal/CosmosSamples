@@ -17,8 +17,13 @@ import { Stopwatch } from "./Stopwatch";
     let rus = await client.performInsertParallel(numberOfItems, maxParallelReq);
     sw.logElapsedTime(`${numberOfItems}, RUs: ${rus}, Parallel-${maxParallelReq}`);
     
+    let chunkSize = 2500;
+    sw.restart();    
+    rus = await client.performInsertUsingSp(numberOfItems, false, true, undefined, chunkSize);
+    sw.logElapsedTime(`${numberOfItems}, RUs: ${rus}, SP-Insert, chunk: ${chunkSize}`);
+
     sw.restart();
-    rus = await client.performInsertUsingSp(numberOfItems, false);
+    rus = await client.performInsertUsingSp(numberOfItems, false, true);
     sw.logElapsedTime(`${numberOfItems}, RUs: ${rus}, SP-Insert`);
 
     const items = CosmosWrapper.createItems(numberOfItems);
