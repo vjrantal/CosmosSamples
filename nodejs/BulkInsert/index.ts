@@ -10,30 +10,30 @@ import { Stopwatch } from "./Stopwatch";
     await client.Setup();
     
     const sw = new Stopwatch();
-    sw.restart();
 
-    let maxParallelReq = 40;
+    const chunkSize = 2500;
+
+    let items = CosmosWrapper.createItems(numberOfItems);
+
     sw.restart();
-    let rus = await client.performInsertParallel(numberOfItems, maxParallelReq);
-    sw.logElapsedTime(`${numberOfItems}, RUs: ${rus}, Parallel-${maxParallelReq}`);
-    
-    let chunkSize = 2500;
-    sw.restart();    
-    rus = await client.performInsertUsingSp(numberOfItems, false, true, undefined, chunkSize);
+    let rus = await client.performInsertUsingSp(numberOfItems, false, true, items, chunkSize);
     sw.logElapsedTime(`${numberOfItems}, RUs: ${rus}, SP-Insert, chunk: ${chunkSize}`);
 
-    sw.restart();
-    rus = await client.performInsertUsingSp(numberOfItems, false, true);
-    sw.logElapsedTime(`${numberOfItems}, RUs: ${rus}, SP-Insert`);
-
-    const items = CosmosWrapper.createItems(numberOfItems);
-
-    sw.restart();
-    rus = await client.performInsertUsingSp(numberOfItems, true, false, items);
-    sw.logElapsedTime(`${numberOfItems}, RUs: ${rus}, SP-Upsert`);
+    items = CosmosWrapper.createItems(numberOfItems);
 
     sw.restart();
     rus = await client.performInsertUsingSp(numberOfItems, false, true, items);
-    sw.logElapsedTime(`${numberOfItems}, RUs: ${rus}, SP-Insert Ignore`);
+    sw.logElapsedTime(`${numberOfItems}, RUs: ${rus}, SP-Insert`);
 
+    items = CosmosWrapper.createItems(numberOfItems);
+
+    sw.restart();
+    rus = await client.performInsertUsingSp(numberOfItems, true, true, items, chunkSize);
+    sw.logElapsedTime(`${numberOfItems}, RUs: ${rus}, SP-Upsert, chunk: ${chunkSize}`);
+
+    items = CosmosWrapper.createItems(numberOfItems);
+
+    sw.restart();
+    rus = await client.performInsertUsingSp(numberOfItems, true, true, items);
+    sw.logElapsedTime(`${numberOfItems}, RUs: ${rus}, SP-Upsert`);
 })();
